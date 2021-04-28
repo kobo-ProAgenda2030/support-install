@@ -154,6 +154,7 @@ class Template:
             'SUPPORT_DB_NAME': dict_['support_db_name'],
             'SUPPORT_DB_USER': dict_['support_db_user'],
             'SUPPORT_DB_PASSWORD': dict_['support_db_password'],
+            'POSTGRES_PASSWORD_URL_ENCODED': quote_plus(dict_['support_db_password']),
             'SUPPORT_DB_PORT': dict_['support_db_port'],
             'SUPPORT_DB_INTERNAL_PORT': dict_['support_db_internal_port'],
             'SUPPORT_DB_SERVER': dict_['support_db_server'],
@@ -164,7 +165,20 @@ class Template:
             'KOBO_CAT_DB_NAME': dict_['kobo_cat_db_name'],
             'KOBO_DB_USER': dict_['kobo_db_user'],
             'KOBO_DB_PASSWORD': dict_['kobo_db_password'],
-            'KOBO_API_URI': dict_['kobo_api_uri']
+            'KOBO_API_URI': dict_['kobo_api_uri'],
+            'POSTGRES_BACKUP_SCHEDULE': dict_['postgres_backup_schedule'],
+            'AWS_POSTGRES_BACKUP_MINIMUM_SIZE': dict_['aws_postgres_backup_minimum_size'],
+            'AWS_BACKUP_YEARLY_RETENTION': dict_['aws_backup_yearly_retention'],
+            'AWS_BACKUP_MONTHLY_RETENTION': dict_['aws_backup_monthly_retention'],
+            'AWS_BACKUP_WEEKLY_RETENTION': dict_['aws_backup_weekly_retention'],
+            'AWS_BACKUP_DAILY_RETENTION': dict_['aws_backup_daily_retention'],
+            'AWS_ACCESS_KEY_ID': dict_['aws_access_key'],
+            'AWS_SECRET_ACCESS_KEY': dict_['aws_secret_key'],
+            'USE_AWS': _get_value('use_aws'),
+            'AWS_BUCKET_NAME': dict_['aws_bucket_name'],
+            'AWS_BACKUP_BUCKET_DELETION_RULE_ENABLED': _get_value(
+                'aws_backup_bucket_deletion_rule_enabled', 'True', 'False'),
+            
         }
 
     @staticmethod

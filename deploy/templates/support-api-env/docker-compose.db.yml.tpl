@@ -11,6 +11,8 @@ services:
       - "${SUPPORT_DB_PORT}:${SUPPORT_DB_INTERNAL_PORT}"
     volumes:
       - support-postgres-data:/var/lib/postgres
+      - ./postgres-scripts:/postgres-scripts
+    command: "bash ./postgres-scripts/entrypoint.sh"
     networks:
       - api-network
   
@@ -22,6 +24,19 @@ services:
       - support-postgres
     env_file:
       - ./database.txt
+    networks:
+      - api-network
+
+  postgres-backuper:
+    image: support_postgres_backup:latest
+    container_name: postgres-backuper
+    restart: unless-stopped
+    env_file: 
+      - ./database.txt
+    volumes:
+      - support-postgres-data:/var/lib/postgres
+      - ./postgres-scripts:/postgres-scripts
+    command: "bash ./postgres-scripts/entrypoint.sh"
     networks:
       - api-network
     

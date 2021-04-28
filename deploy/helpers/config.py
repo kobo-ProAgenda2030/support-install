@@ -9,20 +9,14 @@ from random import choice
 
 from helpers.singleton import Singleton
 from helpers.cli import CLI
+from helpers.aws_validation import AWSValidation
 
 class Config(metaclass=Singleton):
 
     CONFIG_FILE = '.run.conf'
     UNIQUE_ID_FILE = '.uniqid'
-    # UPSERT_DB_USERS_TRIGGER_FILE = '.upsert_db_users'
-    # LETSENCRYPT_DOCKER_DIR = 'nginx-certbot'
     ENV_FILES_DIR = 'support-api-env'
-    # DEFAULT_PROXY_PORT = '8080'
-    # DEFAULT_NGINX_PORT = '80'
-    # DEFAULT_NGINX_HTTPS_PORT = '443'
-    # KOBO_DOCKER_BRANCH = '2.020.45-proagenda2030'
-    # KOBO_INSTALL_VERSION = '4.2.0'
-    # MAXIMUM_AWS_CREDENTIAL_ATTEMPTS = 3
+    MAXIMUM_AWS_CREDENTIAL_ATTEMPTS = 3
 
     def __init__(self):
         self.__first_time = None
@@ -104,6 +98,10 @@ class Config(metaclass=Singleton):
         self.__questions_postgres()
 
         self.__questions_kobo_postgres()
+
+        self.__questions_aws()
+
+        self.__questions_postgres_backups()
         
         self.__questions_kobo_api()
 
@@ -246,6 +244,50 @@ class Config(metaclass=Singleton):
                                             CLI.COLOR_QUESTION,
                                             self.__dict['kobo_db_password'])
 
+
+    # TODO: Se debe usar toggle-backup-activation.sh de kobo-docker
+        # TODO: El template de postgresql debe tener su propio entrypoint. Hacer lo mismo que se hizo en dashboards
+    # TODO: En toggle-backup-activation.sh registrar el cron para sacar backup de postgresql
+    # TODO: Se debe hacer el valor para S3 y/o path local
+    def __questions_postgres_backups(self):
+        """
+        Asks all questions about backups.
+        """
+        if self.backend_questions or (self.frontend_questions and not self.aws):
+
+            self.__dict['use_backup'] = CLI.yes_no_question(
+                'Do you want to activate backups?',
+                default=self.__dict['use_backup']
+            )
+            if self.__dict['use_backup']:
+                if self.advanced_options:
+                    if self.backend_questions and not self.frontend_questions:
+                        self.__questions_aws()
+                    
+                    self.__dict['use_wal_e'] = False
+
+                    schedule_regex_pattern = (
+                        r'^((((\d+(,\d+)*)|(\d+-\d+)|(\*(\/\d+)?)))'
+                        r'(\s+(((\d+(,\d+)*)|(\d+\-\d+)|(\*(\/\d+)?)))){4})$')
+                    message = (
+                        'Schedules use linux cron syntax with UTC datetimes.\n'
+                        'For example, schedule at 12:00 AM E.S.T every Sunday '
+                        'would be:\n'
+                        '0 5 * * 0\n'
+                        '\n'
+                        'Please visit https://crontab.guru/ to generate a '
+                        'cron schedule.'
+                    )
+                    CLI.colored_print('PostgreSQL backup schedule?',
+                                        CLI.COLOR_QUESTION)
+                    self.__dict[
+                        'postgres_backup_schedule'] = CLI.get_response(
+                        '~{}'.format(schedule_regex_pattern),
+                        self.__dict['postgres_backup_schedule'])
+
+                    if self.aws:
+                        self.__questions_aws_backup_settings()
+                    
     def __questions_kobo_api(self):
         """
         KoBoToolbox's API
@@ -333,10 +375,149 @@ class Config(metaclass=Singleton):
         self.write_unique_id()
         self.__validate_installation()
 
+    def __questions_aws(self):
+        """
+        Asks if user wants to see AWS option
+        and asks for credentials if needed.
+        """
+        self.__dict['use_aws'] = CLI.yes_no_question(
+            'Do you want to use AWS S3 storage?',
+            default=self.__dict['use_aws']
+        )
+        self.__questions_aws_configuration()
+        self.__questions_aws_validate_credentials()
+
+    def __questions_aws_configuration(self):
+
+        if self.__dict['use_aws']:
+            self.__dict['aws_access_key'] = CLI.colored_input(
+                'AWS Access Key', CLI.COLOR_QUESTION,
+                self.__dict['aws_access_key'])
+            self.__dict['aws_secret_key'] = CLI.colored_input(
+                'AWS Secret Key', CLI.COLOR_QUESTION,
+                self.__dict['aws_secret_key'])
+            self.__dict['aws_bucket_name'] = CLI.colored_input(
+                'AWS Bucket name', CLI.COLOR_QUESTION,
+                self.__dict['aws_bucket_name'])
+        else:
+            self.__dict['aws_access_key'] = ''
+            self.__dict['aws_secret_key'] = ''
+            self.__dict['aws_bucket_name'] = ''
+
+    def __questions_aws_validate_credentials(self):
+        """
+        Prompting user whether they would like to validate their entered AWS
+        credentials or continue without validation.
+        """
+        # Resetting validation when setup is rerun
+        self.__dict['aws_credentials_valid'] = False
+        aws_credential_attempts = 0
+
+        if self.__dict['use_aws']:
+            self.__dict['aws_validate_credentials'] = CLI.yes_no_question(
+                'Would you like to validate your AWS credentials?',
+                default=self.__dict['aws_validate_credentials'],
+            )
+
+        if self.__dict['use_aws'] and self.__dict['aws_validate_credentials']:
+            while (
+                not self.__dict['aws_credentials_valid']
+                and aws_credential_attempts
+                <= self.MAXIMUM_AWS_CREDENTIAL_ATTEMPTS
+            ):
+                aws_credential_attempts += 1
+                self.validate_aws_credentials()
+                attempts_remaining = (
+                    self.MAXIMUM_AWS_CREDENTIAL_ATTEMPTS
+                    - aws_credential_attempts
+                )
+                if (
+                    not self.__dict['aws_credentials_valid']
+                    and attempts_remaining > 0
+                ):
+                    CLI.colored_print(
+                        'Invalid credentials, please try again.',
+                        CLI.COLOR_WARNING,
+                    )
+                    CLI.colored_print(
+                        'Attempts remaining for AWS validation: {}'.format(
+                            attempts_remaining
+                        ),
+                        CLI.COLOR_INFO,
+                    )
+                    self.__questions_aws_configuration()
+            else:
+                if not self.__dict['aws_credentials_valid']:
+                    CLI.colored_print(
+                        'Please restart configuration', CLI.COLOR_ERROR
+                    )
+                    sys.exit(1)
+                else:
+                    CLI.colored_print(
+                        'AWS credentials successfully validated',
+                        CLI.COLOR_SUCCESS
+                    )
+
+    def __questions_aws_backup_settings(self):
+
+        self.__dict['aws_backup_bucket_name'] = CLI.colored_input(
+            'AWS Backups bucket name', CLI.COLOR_QUESTION,
+            self.__dict['aws_backup_bucket_name'])
+
+        if self.__dict['aws_backup_bucket_name'] != '':
+
+            backup_from_primary = self.__dict['backup_from_primary']
+
+            CLI.colored_print('How many yearly backups to keep?',
+                              CLI.COLOR_QUESTION)
+            self.__dict['aws_backup_yearly_retention'] = CLI.get_response(
+                r'~^\d+$', self.__dict['aws_backup_yearly_retention'])
+
+            CLI.colored_print('How many monthly backups to keep?',
+                              CLI.COLOR_QUESTION)
+            self.__dict['aws_backup_monthly_retention'] = CLI.get_response(
+                r'~^\d+$', self.__dict['aws_backup_monthly_retention'])
+
+            CLI.colored_print('How many weekly backups to keep?',
+                              CLI.COLOR_QUESTION)
+            self.__dict['aws_backup_weekly_retention'] = CLI.get_response(
+                r'~^\d+$', self.__dict['aws_backup_weekly_retention'])
+
+            CLI.colored_print('How many daily backups to keep?',
+                              CLI.COLOR_QUESTION)
+            self.__dict['aws_backup_daily_retention'] = CLI.get_response(
+                r'~^\d+$', self.__dict['aws_backup_daily_retention'])
+
+            # if (not self.multi_servers or
+            #         (self.primary_backend and backup_from_primary) or
+            #         (self.secondary_backend and not backup_from_primary)):
+            #     CLI.colored_print('PostgresSQL backup minimum size (in MB)?',
+                                #   CLI.COLOR_QUESTION)
+            CLI.colored_print(
+                'Files below this size will be ignored when '
+                'rotating backups.',
+                CLI.COLOR_INFO)
+            self.__dict[
+                'aws_postgres_backup_minimum_size'] = CLI.get_response(
+                r'~^\d+$',
+                self.__dict['aws_postgres_backup_minimum_size'])
+            
+            CLI.colored_print('Chunk size of multipart uploads (in MB)?',
+                              CLI.COLOR_QUESTION)
+            self.__dict['aws_backup_upload_chunk_size'] = CLI.get_response(
+                r'~^\d+$', self.__dict['aws_backup_upload_chunk_size'])
+
+            response = CLI.yes_no_question(
+                'Use AWS LifeCycle deletion rule?',
+                default=self.__dict['aws_backup_bucket_deletion_rule_enabled']
+            )
+            self.__dict['aws_backup_bucket_deletion_rule_enabled'] = response
+
     @classmethod
     def get_template(cls):
 
         return {
+            'advanced': False,
             'customized_ports': False,
             'support_api_port': 8500,
             'docker_prefix': '',
@@ -362,6 +543,24 @@ class Config(metaclass=Singleton):
             'kobo_db_user': 'kobo',
             'kobo_db_password': '',
             'kobo_api_uri': '',
+            'use_backup': False,
+            'use_aws': False,
+            'aws_credentials_valid': False,
+            'aws_validate_credentials': True,
+            'aws_access_key': '',
+            'aws_secret_key': '',
+            'aws_bucket_name': '',
+            'multi': False,
+            'backup_from_primary': True,
+            'postgres_backup_schedule': '0 2 * * 0',
+            'aws_backup_bucket_name': '',
+            'aws_backup_yearly_retention': '2',
+            'aws_backup_monthly_retention': '12',
+            'aws_backup_weekly_retention': '4',
+            'aws_backup_daily_retention': '30',
+            'aws_postgres_backup_minimum_size': '50',
+            'aws_backup_upload_chunk_size': '15',
+            'aws_backup_bucket_deletion_rule_enabled': False,
         }
 
     @classmethod
@@ -403,6 +602,46 @@ class Config(metaclass=Singleton):
         """
         return self.__dict['server_role'] == 'frontend'
     
+    @property
+    def aws(self):
+        """
+        Checks whether questions are backend only
+
+        Returns:
+            bool
+        """
+        return self.__dict['use_aws']
+
+    @property
+    def multi_servers(self):
+        """
+        Checks whether installation is for separate frontend and backend servers
+
+        Returns:
+            bool
+        """
+        return self.__dict['multi']
+
+    @property
+    def backend_questions(self):
+        """
+        Checks whether questions are backend only
+
+        Returns:
+            bool
+        """
+        return not self.multi_servers or not self.frontend
+
+    @property
+    def advanced_options(self):
+        """
+        Checks whether advanced options should be displayed
+
+        Returns:
+            bool
+        """
+        return self.__dict['advanced']
+
     def __validate_installation(self):
         """
         Validates if installation is not run over existing data.
@@ -456,6 +695,13 @@ class Config(metaclass=Singleton):
                                 os.path.join(self.__dict['support_api_path'],
                                              '.vols', 'db', 'kobo_first_run')
                             ))
+
+    def validate_aws_credentials(self):
+        validation = AWSValidation(
+            aws_access_key_id=self.__dict['aws_access_key'],
+            aws_secret_access_key=self.__dict['aws_secret_key'],
+        )
+        self.__dict['aws_credentials_valid'] = validation.validate_credentials()
 
     @staticmethod
     def __welcome():
