@@ -16,7 +16,9 @@ jobs:
       - name: Push to GitHub Packages
         uses: docker/build-push-action@v1
         with:
+          dockerfile: ./build/postgres-backup/Dockerfile
           username: ${{ secrets.DOCKER_HUB_USER  }}
           password: ${{ secrets.DOCKER_HUB_PASSWORD  }}
           repository: proagenda2030/support_postgres_backup
           tag_with_ref: true
+          tags: latest

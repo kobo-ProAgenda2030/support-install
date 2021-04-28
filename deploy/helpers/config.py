@@ -253,40 +253,34 @@ class Config(metaclass=Singleton):
         """
         Asks all questions about backups.
         """
-        if self.backend_questions or (self.frontend_questions and not self.aws):
+        self.__dict['use_backup'] = CLI.yes_no_question(
+            'Do you want to activate backups?',
+            default=self.__dict['use_backup']
+        )
+        if self.__dict['use_backup']:
+            self.__dict['use_wal_e'] = False
 
-            self.__dict['use_backup'] = CLI.yes_no_question(
-                'Do you want to activate backups?',
-                default=self.__dict['use_backup']
+            schedule_regex_pattern = (
+                r'^((((\d+(,\d+)*)|(\d+-\d+)|(\*(\/\d+)?)))'
+                r'(\s+(((\d+(,\d+)*)|(\d+\-\d+)|(\*(\/\d+)?)))){4})$')
+            message = (
+                'Schedules use linux cron syntax with UTC datetimes.\n'
+                'For example, schedule at 12:00 AM E.S.T every Sunday '
+                'would be:\n'
+                '0 5 * * 0\n'
+                '\n'
+                'Please visit https://crontab.guru/ to generate a '
+                'cron schedule.'
             )
-            if self.__dict['use_backup']:
-                if self.advanced_options:
-                    if self.backend_questions and not self.frontend_questions:
-                        self.__questions_aws()
-                    
-                    self.__dict['use_wal_e'] = False
+            CLI.colored_print('PostgreSQL backup cron expression?',
+                                CLI.COLOR_QUESTION)
+            self.__dict[
+                'postgres_backup_schedule'] = CLI.get_response(
+                '~{}'.format(schedule_regex_pattern),
+                self.__dict['postgres_backup_schedule'])
 
-                    schedule_regex_pattern = (
-                        r'^((((\d+(,\d+)*)|(\d+-\d+)|(\*(\/\d+)?)))'
-                        r'(\s+(((\d+(,\d+)*)|(\d+\-\d+)|(\*(\/\d+)?)))){4})$')
-                    message = (
-                        'Schedules use linux cron syntax with UTC datetimes.\n'
-                        'For example, schedule at 12:00 AM E.S.T every Sunday '
-                        'would be:\n'
-                        '0 5 * * 0\n'
-                        '\n'
-                        'Please visit https://crontab.guru/ to generate a '
-                        'cron schedule.'
-                    )
-                    CLI.colored_print('PostgreSQL backup schedule?',
-                                        CLI.COLOR_QUESTION)
-                    self.__dict[
-                        'postgres_backup_schedule'] = CLI.get_response(
-                        '~{}'.format(schedule_regex_pattern),
-                        self.__dict['postgres_backup_schedule'])
-
-                    if self.aws:
-                        self.__questions_aws_backup_settings()
+            if self.aws:
+                self.__questions_aws_backup_settings()
                     
     def __questions_kobo_api(self):
         """
@@ -396,13 +390,9 @@ class Config(metaclass=Singleton):
             self.__dict['aws_secret_key'] = CLI.colored_input(
                 'AWS Secret Key', CLI.COLOR_QUESTION,
                 self.__dict['aws_secret_key'])
-            self.__dict['aws_bucket_name'] = CLI.colored_input(
-                'AWS Bucket name', CLI.COLOR_QUESTION,
-                self.__dict['aws_bucket_name'])
         else:
             self.__dict['aws_access_key'] = ''
             self.__dict['aws_secret_key'] = ''
-            self.__dict['aws_bucket_name'] = ''
 
     def __questions_aws_validate_credentials(self):
         """
@@ -549,7 +539,6 @@ class Config(metaclass=Singleton):
             'aws_validate_credentials': True,
             'aws_access_key': '',
             'aws_secret_key': '',
-            'aws_bucket_name': '',
             'multi': False,
             'backup_from_primary': True,
             'postgres_backup_schedule': '0 2 * * 0',
@@ -631,17 +620,7 @@ class Config(metaclass=Singleton):
             bool
         """
         return not self.multi_servers or not self.frontend
-
-    @property
-    def advanced_options(self):
-        """
-        Checks whether advanced options should be displayed
-
-        Returns:
-            bool
-        """
-        return self.__dict['advanced']
-
+    
     def __validate_installation(self):
         """
         Validates if installation is not run over existing data.

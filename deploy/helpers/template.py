@@ -67,29 +67,6 @@ class Template:
                                   destination_directory,
                                   filenames)
 
-        # # kobo-docker
-        # templates_path = os.path.join(templates_path_parent, 'kobo-docker')
-        # for root, dirnames, filenames in os.walk(templates_path):
-        #     destination_directory = dict_['kobodocker_path']
-        #     cls.__write_templates(template_variables,
-        #                           root,
-        #                           destination_directory,
-        #                           filenames)
-
-        # # # nginx-certbox
-        # # if config.use_letsencrypt:
-        # #     templates_path = os.path.join(templates_path_parent,
-        # #                                   Config.LETSENCRYPT_DOCKER_DIR, '')
-        # #     for root, dirnames, filenames in os.walk(templates_path):
-        # #         destination_directory = cls.__create_directory(
-        # #             config.get_letsencrypt_repo_path(),
-        # #             root,
-        # #             templates_path)
-        # #         cls.__write_templates(template_variables,
-        # #                               root,
-        # #                               destination_directory,
-        # #                               filenames)
-
     @classmethod
     def render_maintenance(cls, config):
 
@@ -175,9 +152,14 @@ class Template:
             'AWS_ACCESS_KEY_ID': dict_['aws_access_key'],
             'AWS_SECRET_ACCESS_KEY': dict_['aws_secret_key'],
             'USE_AWS': _get_value('use_aws'),
-            'AWS_BUCKET_NAME': dict_['aws_bucket_name'],
             'AWS_BACKUP_BUCKET_DELETION_RULE_ENABLED': _get_value(
                 'aws_backup_bucket_deletion_rule_enabled', 'True', 'False'),
+            'USE_BACKUP': '' if dict_['use_backup'] else '#',
+            'USE_AWS_BACKUP': '' if (config.aws and
+                                     dict_['aws_backup_bucket_name'] != '' and
+                                     dict_['use_backup']) else '#',
+            'AWS_BACKUP_BUCKET_NAME': dict_['aws_backup_bucket_name'],
+            'AWS_BACKUP_UPLOAD_CHUNK_SIZE': dict_['aws_backup_upload_chunk_size'],
             
         }
 

@@ -12,7 +12,6 @@ services:
     volumes:
       - support-postgres-data:/var/lib/postgres
       - ./postgres-scripts:/postgres-scripts
-    command: "bash ./postgres-scripts/entrypoint.sh"
     networks:
       - api-network
   
@@ -27,12 +26,13 @@ services:
     networks:
       - api-network
 
-  postgres-backuper:
+  support-postgres-backup:
     image: support_postgres_backup:latest
-    container_name: postgres-backuper
+    container_name: support-postgres-backup
     restart: unless-stopped
     env_file: 
       - ./database.txt
+      - ./aws.txt
     volumes:
       - support-postgres-data:/var/lib/postgres
       - ./postgres-scripts:/postgres-scripts
